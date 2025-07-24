@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
@@ -8,6 +8,7 @@ import { ArrowLeft, Vote } from "lucide-react"
 import ElectionsList from "@/components/elections-list"
 import VotingInterface from "@/components/voting-interface"
 import ResultsDisplay from "@/components/results-display"
+import { useVotingContract } from "@/context/voting-contract-context"
 
 interface VoterDashboardProps {
   account: string
@@ -16,6 +17,25 @@ interface VoterDashboardProps {
 
 export default function VoterDashboard({ account, onBack }: VoterDashboardProps) {
   const [activeTab, setActiveTab] = useState("elections")
+  const { contract } = useVotingContract()
+  const [blockTime, setBlockTime] = useState<number | null>(null)
+
+  const fetchBlockchainTime = async () => {
+    if (!contract?.runner?.provider) return
+    try {
+      const block = await contract.runner.provider.getBlock("latest")
+      setBlockTime(block.timestamp)
+    } catch (err) {
+      console.error("Failed to fetch blockchain time:", err)
+    }
+  }
+
+  // Fetch blockchain time every 10 seconds automatically
+  useEffect(() => {
+    fetchBlockchainTime()
+    const interval = setInterval(fetchBlockchainTime, 10000) // Refresh every 10s
+    return () => clearInterval(interval)
+  }, [contract])
 
   return (
     <div className="max-w-5xl mx-auto">
@@ -44,7 +64,18 @@ export default function VoterDashboard({ account, onBack }: VoterDashboardProps)
               <CardDescription>Browse all elections and their status</CardDescription>
             </CardHeader>
             <CardContent>
-              <ElectionsList account={account} />
+              {/* Display Current Blockchain Time */}
+              {blockTime && (
+                <div className="text-sm text-muted-foreground mb-4">
+                  ⏱️ Current Blockchain Time:{" "}
+                  <span className="font-medium text-foreground">
+                    {new Date(blockTime * 1000).toLocaleString()}
+                  </span>
+                </div>
+              )}
+
+              {/* Pass blockTime and setBlockTime to ElectionsList */}
+              <ElectionsList account={account} blockTime={blockTime} refreshBlockTime={fetchBlockchainTime} />
             </CardContent>
           </Card>
         </TabsContent>

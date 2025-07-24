@@ -1,7 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -42,42 +48,31 @@ export default function ElectionsList({ account }: ElectionsListProps) {
     try {
       setLoading(true)
 
-      // Get election count from contract
       const count = await contract.getElectionCount()
       const electionsArray: Election[] = []
 
-      // Fetch each election
+      // ✅ Get current blockchain timestamp
+      const block = await contract.runner.provider.getBlock("latest")
+      const now = Number(block.timestamp)
+
       for (let i = 0; i < Number(count); i++) {
         const election = await contract.elections(i)
         const hasVoted = await contract.hasVoted(i, account)
         const candidateCount = await contract.getCandidateCount(i)
 
-        const now = Math.floor(Date.now() / 1000)
-
-        // Convert BigInt to Number for time comparison
         const startTime = Number(election.startTime)
         const endTime = Number(election.endTime)
+
         const isActive = now >= startTime && now <= endTime
         const hasEnded = now > endTime
         const isUpcoming = now < startTime
-
-        console.log(`Election ${i}:`, {
-          name: election.name,
-          now,
-          startTime,
-          endTime,
-          isActive,
-          hasVoted,
-          hasEnded,
-          isUpcoming,
-        })
 
         electionsArray.push({
           id: i,
           name: election.name,
           description: election.description,
-          startTime: startTime,
-          endTime: endTime,
+          startTime,
+          endTime,
           isActive,
           hasVoted,
           candidateCount: Number(candidateCount),
@@ -179,7 +174,9 @@ export default function ElectionsList({ account }: ElectionsListProps) {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   {election.name}
-                  <span className="text-sm font-normal text-muted-foreground">(ID: {election.id})</span>
+                  <span className="text-sm font-normal text-muted-foreground">
+                    (ID: {election.id})
+                  </span>
                 </CardTitle>
                 <CardDescription>{election.description}</CardDescription>
               </div>
@@ -203,7 +200,9 @@ export default function ElectionsList({ account }: ElectionsListProps) {
                 <Users className="h-4 w-4 text-muted-foreground" />
                 <div className="text-sm">
                   <div className="font-medium">{election.candidateCount} Candidates</div>
-                  <div className="text-muted-foreground">{election.hasVoted ? "You have voted" : "Vote not cast"}</div>
+                  <div className="text-muted-foreground">
+                    {election.hasVoted ? "You have voted" : "Vote not cast"}
+                  </div>
                 </div>
               </div>
 
@@ -217,10 +216,10 @@ export default function ElectionsList({ account }: ElectionsListProps) {
                     {election.isActive && !election.hasVoted
                       ? "You can vote now"
                       : election.hasVoted
-                        ? "Thank you for voting"
-                        : election.hasEnded
-                          ? "Voting closed"
-                          : "Voting not started"}
+                      ? "Thank you for voting"
+                      : election.hasEnded
+                      ? "Voting closed"
+                      : "Voting not started"}
                   </div>
                 </div>
               </div>

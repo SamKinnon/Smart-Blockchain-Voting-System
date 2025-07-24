@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useToast } from "@/components/ui/use-toast"
-import { Loader2, Wallet, RefreshCw, AlertCircle } from "lucide-react"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Loader2, Wallet, RefreshCw } from 'lucide-react'
 
 interface ConnectWalletProps {
   account: string | null
@@ -23,44 +22,32 @@ export default function ConnectWallet({ account, setAccount }: ConnectWalletProp
   const [availableAccounts, setAvailableAccounts] = useState<Account[]>([])
   const [selectedAccount, setSelectedAccount] = useState<string>("")
   const [showAccountSelector, setShowAccountSelector] = useState(false)
-  const [connectionError, setConnectionError] = useState<string | null>(null)
-  const [isMetaMaskInstalled, setIsMetaMaskInstalled] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
     // Check if MetaMask is installed
     if (typeof window !== "undefined") {
-      const checkMetaMask = () => {
-        if (window.ethereum && window.ethereum.isMetaMask) {
-          setIsMetaMaskInstalled(true)
-          setConnectionError(null)
-          // Check if already connected
-          checkConnection()
-        } else {
-          setIsMetaMaskInstalled(false)
-          setConnectionError("MetaMask is not installed. Please install MetaMask extension.")
-        }
+      if (!window.ethereum) {
+        toast({
+          title: "MetaMask not detected",
+          description: "Please install MetaMask to use this application",
+          variant: "destructive",
+        })
+        return
+      } else {
+        // Check if already connected
+        checkConnection()
       }
-
-      // Check immediately
-      checkMetaMask()
-
-      // Also check after a short delay in case MetaMask loads later
-      const timeout = setTimeout(checkMetaMask, 1000)
-
-      return () => clearTimeout(timeout)
     }
-  }, [])
+  }, [toast])
 
   // Listen for account changes
   useEffect(() => {
-    if (window.ethereum && isMetaMaskInstalled) {
+    if (typeof window !== "undefined" && window.ethereum) {
       const handleAccountsChanged = (accounts: string[]) => {
-        console.log("Accounts changed:", accounts)
         if (accounts.length > 0) {
           setAccount(accounts[0])
           setSelectedAccount(accounts[0])
-          setConnectionError(null)
           toast({
             title: "Account changed",
             description: `Switched to: ${shortenAddress(accounts[0])}`,
@@ -69,89 +56,79 @@ export default function ConnectWallet({ account, setAccount }: ConnectWalletProp
           setAccount(null)
           setSelectedAccount("")
           setAvailableAccounts([])
-          setConnectionError("No accounts connected")
         }
       }
 
-      const handleChainChanged = (chainId: string) => {
-        console.log("Chain changed:", chainId)
-        // Reload the page when chain changes
-        window.location.reload()
-      }
-
-      const handleConnect = (connectInfo: { chainId: string }) => {
-        console.log("Connected to chain:", connectInfo.chainId)
-        setConnectionError(null)
-      }
-
-      const handleDisconnect = (error: { code: number; message: string }) => {
-        console.log("Disconnected:", error)
-        setAccount(null)
-        setSelectedAccount("")
-        setAvailableAccounts([])
-        setConnectionError("Disconnected from MetaMask")
-      }
-
       window.ethereum.on("accountsChanged", handleAccountsChanged)
-      window.ethereum.on("chainChanged", handleChainChanged)
-      window.ethereum.on("connect", handleConnect)
-      window.ethereum.on("disconnect", handleDisconnect)
 
       return () => {
         if (window.ethereum) {
           window.ethereum.removeListener("accountsChanged", handleAccountsChanged)
-          window.ethereum.removeListener("chainChanged", handleChainChanged)
-          window.ethereum.removeListener("connect", handleConnect)
-          window.ethereum.removeListener("disconnect", handleDisconnect)
         }
       }
     }
-  }, [isMetaMaskInstalled])
+  }, [setAccount, toast])
 
   const checkConnection = async () => {
-    if (!window.ethereum || !isMetaMaskInstalled) return
+    if (!window.ethereum) return
 
     try {
       const accounts = await window.ethereum.request({ method: "eth_accounts" })
-      console.log("Existing accounts:", accounts)
       if (accounts.length > 0) {
         setAccount(accounts[0])
         setSelectedAccount(accounts[0])
-        setConnectionError(null)
       }
     } catch (error) {
       console.error("Error checking connection:", error)
-      setConnectionError("Failed to check existing connection")
     }
   }
 
-  const connectToMetaMask = async () => {
-    if (!window.ethereum || !isMetaMaskInstalled) {
-      setConnectionError("MetaMask is not installed")
+  const fetchAllAccounts = async () => {
+    if (!window.ethereum) {
+      toast({
+        title: "MetaMask not detected",
+        description: "Please install MetaMask to use this application",
+        variant: "destructive",
+      })
       return
     }
 
     try {
       setIsConnecting(true)
-      setConnectionError(null)
 
-      console.log("Requesting account access...")
-
-      // Request account access
+      // Check if MetaMask is locked
       const accounts = await window.ethereum.request({
-        method: "eth_requestAccounts",
+        method: "eth_accounts"
       })
 
-      console.log("Accounts received:", accounts)
-
       if (accounts.length === 0) {
-        throw new Error("No accounts returned from MetaMask")
+        // No accounts connected, request permission
+        console.log("No accounts found, requesting access...")
+        const requestedAccounts = await window.ethereum.request({
+          method: "eth_requestAccounts"
+        })
+
+        if (requestedAccounts.length === 0) {
+          toast({
+            title: "No accounts available",
+            description: "Please unlock MetaMask and try again",
+            variant: "destructive",
+          })
+          return
+        }
       }
+
+      // Get all available accounts
+      const allAccounts = await window.ethereum.request({
+        method: "eth_requestAccounts"
+      })
+
+      console.log("Found accounts:", allAccounts)
 
       // Get balance for each account
       const accountsWithBalance: Account[] = []
 
-      for (const address of accounts) {
+      for (const address of allAccounts) {
         try {
           const balance = await window.ethereum.request({
             method: "eth_getBalance",
@@ -165,8 +142,10 @@ export default function ConnectWallet({ account, setAccount }: ConnectWalletProp
             address,
             balance: balanceInEth,
           })
-        } catch (error) {
-          console.error(`Error getting balance for ${address}:`, error)
+
+          console.log(`Account ${address}: ${balanceInEth} ETH`)
+        } catch (balanceError) {
+          console.error(`Error getting balance for ${address}:`, balanceError)
           accountsWithBalance.push({
             address,
             balance: "0.0000",
@@ -174,37 +153,56 @@ export default function ConnectWallet({ account, setAccount }: ConnectWalletProp
         }
       }
 
+      if (accountsWithBalance.length === 0) {
+        toast({
+          title: "No accounts found",
+          description: "Please make sure MetaMask is unlocked and has accounts",
+          variant: "destructive",
+        })
+        return
+      }
+
       setAvailableAccounts(accountsWithBalance)
       setShowAccountSelector(true)
 
-      // Set the first account as selected
-      setSelectedAccount(accounts[0])
-      setAccount(accounts[0])
-
-      toast({
-        title: "Connected successfully",
-        description: `Connected to ${shortenAddress(accounts[0])}`,
-      })
-    } catch (error: any) {
-      console.error("Connection error:", error)
-
-      let errorMessage = "Failed to connect to MetaMask"
-
-      if (error.code === 4001) {
-        errorMessage = "Connection rejected by user"
-      } else if (error.code === -32002) {
-        errorMessage = "Connection request already pending. Please check MetaMask."
-      } else if (error.message) {
-        errorMessage = error.message
+      if (allAccounts.length > 0 && !account) {
+        setSelectedAccount(allAccounts[0])
+        setAccount(allAccounts[0])
+        toast({
+          title: "Wallet connected",
+          description: `Connected to: ${shortenAddress(allAccounts[0])}`,
+        })
       }
 
-      setConnectionError(errorMessage)
+    } catch (error: any) {
+      console.error("Error fetching accounts:", error)
 
-      toast({
-        title: "Connection failed",
-        description: errorMessage,
-        variant: "destructive",
-      })
+      // Handle specific error types
+      if (error?.code === 4001) {
+        toast({
+          title: "Connection rejected",
+          description: "You rejected the connection request",
+          variant: "destructive",
+        })
+      } else if (error?.code === -32002) {
+        toast({
+          title: "Request pending",
+          description: "Please check MetaMask for a pending connection request",
+          variant: "destructive",
+        })
+      } else if (error?.message?.includes("User rejected")) {
+        toast({
+          title: "Connection rejected",
+          description: "Please approve the connection in MetaMask",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Connection failed",
+          description: "Failed to connect to MetaMask. Please try again.",
+          variant: "destructive",
+        })
+      }
     } finally {
       setIsConnecting(false)
     }
@@ -212,6 +210,12 @@ export default function ConnectWallet({ account, setAccount }: ConnectWalletProp
 
   const switchAccount = async (newAccount: string) => {
     try {
+      // Request MetaMask to switch to the selected account
+      await window.ethereum.request({
+        method: "wallet_requestPermissions",
+        params: [{ eth_accounts: {} }],
+      })
+
       setSelectedAccount(newAccount)
       setAccount(newAccount)
 
@@ -223,7 +227,7 @@ export default function ConnectWallet({ account, setAccount }: ConnectWalletProp
       console.error("Error switching account:", error)
       toast({
         title: "Switch failed",
-        description: "Failed to switch account",
+        description: "Failed to switch account. Please manually switch in MetaMask.",
         variant: "destructive",
       })
     }
@@ -234,7 +238,6 @@ export default function ConnectWallet({ account, setAccount }: ConnectWalletProp
     setSelectedAccount("")
     setAvailableAccounts([])
     setShowAccountSelector(false)
-    setConnectionError(null)
     toast({
       title: "Wallet disconnected",
       description: "Your wallet has been disconnected",
@@ -242,61 +245,15 @@ export default function ConnectWallet({ account, setAccount }: ConnectWalletProp
   }
 
   const refreshAccounts = async () => {
-    await connectToMetaMask()
+    await fetchAllAccounts()
+    toast({
+      title: "Accounts refreshed",
+      description: "Account list has been updated",
+    })
   }
 
   const shortenAddress = (address: string) => {
     return `${address.substring(0, 6)}...${address.substring(address.length - 4)}`
-  }
-
-  // Show MetaMask installation prompt
-  if (!isMetaMaskInstalled) {
-    return (
-      <div className="w-full max-w-md">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>MetaMask Required</AlertTitle>
-          <AlertDescription className="mt-2">
-            Please install MetaMask to use this application.
-            <div className="mt-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => window.open("https://metamask.io/download/", "_blank")}
-              >
-                Install MetaMask
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
-      </div>
-    )
-  }
-
-  // Show connection error
-  if (connectionError && !account) {
-    return (
-      <div className="w-full max-w-md space-y-4">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Connection Error</AlertTitle>
-          <AlertDescription>{connectionError}</AlertDescription>
-        </Alert>
-        <Button onClick={connectToMetaMask} disabled={isConnecting} className="w-full">
-          {isConnecting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Connecting...
-            </>
-          ) : (
-            <>
-              <Wallet className="mr-2 h-4 w-4" />
-              Try Again
-            </>
-          )}
-        </Button>
-      </div>
-    )
   }
 
   return (
@@ -351,7 +308,7 @@ export default function ConnectWallet({ account, setAccount }: ConnectWalletProp
           </CardContent>
         </Card>
       ) : (
-        <Button onClick={connectToMetaMask} disabled={isConnecting} className="w-full">
+        <Button onClick={fetchAllAccounts} disabled={isConnecting} className="w-full">
           {isConnecting ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

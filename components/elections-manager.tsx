@@ -1,7 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle
+} from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -29,9 +35,26 @@ interface Election {
 export default function ElectionsManager({ account }: ElectionsManagerProps) {
   const [elections, setElections] = useState<Election[]>([])
   const [loading, setLoading] = useState(true)
+  const [chainTime, setChainTime] = useState<number | null>(null)
+
   const { toast } = useToast()
   const { contract } = useVotingContract()
 
+  // Fetch chain time every 10 seconds
+  useEffect(() => {
+    const getChainTime = async () => {
+      if (contract?.runner?.provider) {
+        const block = await contract.runner.provider.getBlock("latest")
+        setChainTime(Number(block.timestamp))
+      }
+    }
+
+    getChainTime()
+    const interval = setInterval(getChainTime, 10_000)
+    return () => clearInterval(interval)
+  }, [contract])
+
+  // Fetch elections
   useEffect(() => {
     if (contract && account) {
       fetchElections()
@@ -41,12 +64,9 @@ export default function ElectionsManager({ account }: ElectionsManagerProps) {
   const fetchElections = async () => {
     try {
       setLoading(true)
-
-      // Get election count from contract
       const count = await contract.getElectionCount()
       const electionsArray: Election[] = []
 
-      // Fetch each election
       for (let i = 0; i < count; i++) {
         const election = await contract.elections(i)
         const candidateCount = await contract.getCandidateCount(i)
@@ -56,7 +76,6 @@ export default function ElectionsManager({ account }: ElectionsManagerProps) {
         const isActive = now >= election.startTime && now <= election.endTime
         const hasEnded = now > election.endTime
 
-        // Calculate total votes if results are published
         let totalVotes = 0
         if (resultsPublished) {
           for (let j = 0; j < candidateCount; j++) {
@@ -75,7 +94,7 @@ export default function ElectionsManager({ account }: ElectionsManagerProps) {
           totalVotes,
           resultsPublished,
           isActive,
-          hasEnded,
+          hasEnded
         })
       }
 
@@ -85,7 +104,7 @@ export default function ElectionsManager({ account }: ElectionsManagerProps) {
       toast({
         title: "Error",
         description: "Failed to fetch elections",
-        variant: "destructive",
+        variant: "destructive"
       })
     } finally {
       setLoading(false)
@@ -94,7 +113,7 @@ export default function ElectionsManager({ account }: ElectionsManagerProps) {
 
   const formatDate = (timestamp: number | bigint) => {
     return new Date(Number(timestamp) * 1000).toLocaleString()
-}
+  }
 
   const getStatusBadge = (election: Election) => {
     if (election.isActive) {
@@ -153,6 +172,15 @@ export default function ElectionsManager({ account }: ElectionsManagerProps) {
           Refresh
         </Button>
       </div>
+
+      {chainTime && (
+        <div className="text-sm text-muted-foreground text-right mb-2">
+          ⏱️ Current Blockchain Time:{" "}
+          <span className="font-medium text-black">
+            {new Date(chainTime * 1000).toLocaleString()}
+          </span>
+        </div>
+      )}
 
       {elections.map((election) => (
         <Card key={election.id}>

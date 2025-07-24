@@ -41,7 +41,7 @@ export const VotingContractProvider = ({ children }: VotingContractProviderProps
 
         // For demo purposes, we'll use a hardcoded contract address
         // In a real app, this would come from environment variables or deployment
-        const contractAddress = "0x4c387D6930b6f5220980DE8473F5c3a756a7179e" // Example address
+        const contractAddress = "0xcf799805E4f6601BD77ABB917Aee7bC6318bFc14" // Example address
 
         // Create contract instance
         const votingContract = new ethers.Contract(contractAddress, VotingContract.abi, signer)
